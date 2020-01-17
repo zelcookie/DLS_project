@@ -1,12 +1,8 @@
 from model import StyleTransferModel
 from telegram_token import token
-import numpy as np
-from PIL import Image
 from io import BytesIO
 
 # В бейзлайне пример того, как мы можем обрабатывать две картинки, пришедшие от пользователя.
-# При реалиазации первого алгоритма это Вам не понадобится, так что можете убрать загрузку второй картинки.
-# Если решите делать модель, переносящую любой стиль, то просто вернете код)
 
 model = StyleTransferModel()
 first_image_file = {}
@@ -16,6 +12,7 @@ def send_prediction_on_photo(bot, update):
     # Нам нужно получить две картинки, чтобы произвести перенос стиля, но каждая картинка приходит в
     # отдельном апдейте, поэтому в простейшем случае мы будем сохранять id первой картинки в память,
     # чтобы, когда уже придет вторая, мы могли загрузить в память уже сами картинки и обработать их.
+    # Точно место для улучшения, я бы
     chat_id = update.message.chat_id
     print("Got image from {}".format(chat_id))
 
@@ -24,7 +21,6 @@ def send_prediction_on_photo(bot, update):
     image_file = bot.get_file(image_info)
 
     if chat_id in first_image_file:
-
         # первая картинка, которая к нам пришла станет content image, а вторая style image
         content_image_stream = BytesIO()
         first_image_file[chat_id].download(out=content_image_stream)
@@ -55,10 +51,10 @@ if __name__ == '__main__':
         level=logging.INFO)
     # используем прокси, так как без него у меня ничего не работало.
     # если есть проблемы с подключением, то попробуйте убрать прокси или сменить на другой
-    # проекси ищется в гугле как "socks4 proxy"
+    # прокси ищется в гугле как "socks4 proxy"
     updater = Updater(token=token,  request_kwargs={'proxy_url': 'socks4://168.195.171.42:44880'})
 
-    # В реализации большого бота скорее всего будет удобнее использовать Conversation Handler
+    # В реализации сложных диалогов скорее всего будет удобнее использовать Conversation Handler
     # вместо назначения handler'ов таким способом
     updater.dispatcher.add_handler(MessageHandler(Filters.photo, send_prediction_on_photo))
     updater.start_polling()
