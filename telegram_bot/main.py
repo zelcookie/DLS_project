@@ -25,7 +25,7 @@ def imdel(title):
 
 @run_async
 def start(update, context):
-    context.bot.send_message(chat_id=update.effective_chat.id, text="Пришли фото которое хочешь обработать")
+    context.bot.send_message(chat_id=update.effective_chat.id, text="Пришли фото которое хочешь обработать📷")
     return CONTENT
 
 
@@ -36,7 +36,7 @@ def photo_content(update, context):
     path_content = os.path.join(PHOTOS_FOLDER, '{}_content_photo.jpg'.format(str(update.message.from_user.username)))
     photo_file.download(path_content)
     logger.info("Photo of %s: %s", user.first_name, 'content_photo.jpg')
-    update.message.reply_text('теперь фото стиля')
+    update.message.reply_text('Теперь фото стиля🎆')
 
     return STYLE
 
@@ -49,15 +49,17 @@ def photo_style(update, context):
     path_out = os.path.join(PHOTOS_FOLDER, '{}_out_photo.jpg'.format(str(update.message.from_user.username)))
     photo_file.download(path_style)
     logger.info("Photo of %s: %s", user.first_name, 'style_photo.jpg')
-    update.message.reply_text('перенос стиля скоро будет')
-    style_img = model.image_loader(path_style)# as well as here
-    content_img = model.image_loader(path_content)#измените путь на тот который у вас.
+    update.message.reply_text('Перенос стиля скоро будет⏳')
+    style_img = model.image_loader(path_style)
+    content_img = model.image_loader(path_content)
     output = model.run_style_transfer(content_img, style_img, content_img)
     imsave(output, path_out)
     context.bot.send_photo(chat_id=update.effective_chat.id, photo=open(path_out, 'rb'))
+    update.message.reply_text('По-моему получилось неплохо👨‍🎨')
     imdel(path_style)
     imdel(path_content)
     imdel(path_out)
+    update.message.reply_text('Хочешь еще?\nШли новое фото📷.\nВведи /cancel для завершения')
     return CONTENT
 
 @run_async
@@ -71,7 +73,7 @@ def cancel(update, context):
     imdel(path_content)
     imdel(path_out)
     
-    update.message.reply_text('Bye! I hope we can talk again some day.')
+    update.message.reply_text('Если захочешь попробовать еще, просто введи /start')
     
 
     return ConversationHandler.END
@@ -104,8 +106,7 @@ if __name__ == '__main__':
         states={
             CONTENT: [MessageHandler(Filters.photo, photo_content)],
 
-            STYLE: [MessageHandler(Filters.photo,photo_style)],
-            
+            STYLE: [MessageHandler(Filters.photo,photo_style)]
         },
 
         fallbacks=[CommandHandler('cancel', cancel)]
