@@ -1,60 +1,121 @@
 from model import StyleTransferModel
-from telegram_token import token
+import torchvision.transforms as transforms
 from io import BytesIO
+from telegram_token import token
+import os 
 
+from telegram.ext.dispatcher import run_async
 # В бейзлайне пример того, как мы можем обрабатывать две картинки, пришедшие от пользователя.
-
+unloader = transforms.ToPILImage()
 model = StyleTransferModel()
 first_image_file = {}
 
+CONTENT, STYLE = range(2)
+PHOTOS_FOLDER = './photos/'
 
-def send_prediction_on_photo(bot, update):
-    # Нам нужно получить две картинки, чтобы произвести перенос стиля, но каждая картинка приходит в
-    # отдельном апдейте, поэтому в простейшем случае мы будем сохранять id первой картинки в память,
-    # чтобы, когда уже придет вторая, мы могли загрузить в память уже сами картинки и обработать их.
-    # Точно место для улучшения, я бы
-    chat_id = update.message.chat_id
-    print("Got image from {}".format(chat_id))
+def imsave(tensor, title="out.jpg"):
+    image = tensor.cpu().clone()
+    image = image.squeeze(0)      # функция для отрисовки изображения
+    image = unloader(image)
+    image.save(title, "JPEG", quality=80, optimize=True, progressive=True)
+ 
+def imdel(title):
+    if os.path.exists(title):
+        os.remove(title)
 
-    # получаем информацию о картинке
-    image_info = update.message.photo[-1]
-    image_file = bot.get_file(image_info)
+@run_async
+def start(update, context):
+    context.bot.send_message(chat_id=update.effective_chat.id, text="Пришли фото которое хочешь обработать📷")
+    return CONTENT
 
-    if chat_id in first_image_file:
-        # первая картинка, которая к нам пришла станет content image, а вторая style image
-        content_image_stream = BytesIO()
-        first_image_file[chat_id].download(out=content_image_stream)
-        del first_image_file[chat_id]
 
-        style_image_stream = BytesIO()
-        image_file.download(out=style_image_stream)
+@run_async
+def photo_content(update, context):
+    user = update.message.from_user
+    photo_file = update.message.photo[-1].get_file()
+    path_content = os.path.join(PHOTOS_FOLDER, '{}_content_photo.jpg'.format(str(update.message.from_user.username)))
+    photo_file.download(path_content)
+    logger.info("Photo of %s: %s", user.first_name, 'content_photo.jpg')
+    update.message.reply_text('Теперь фото стиля🎆')
 
-        output = model.transfer_style(content_image_stream, style_image_stream)
+    return STYLE
 
-        # теперь отправим назад фото
-        output_stream = BytesIO()
-        output.save(output_stream, format='PNG')
-        output_stream.seek(0)
-        bot.send_photo(chat_id, photo=output_stream)
-        print("Sent Photo to user")
-    else:
-        first_image_file[chat_id] = image_file
+@run_async
+def photo_style(update, context):
+    user = update.message.from_user
+    photo_file = update.message.photo[-1].get_file()
+    path_style = os.path.join(PHOTOS_FOLDER, '{}_style_photo.jpg'.format(str(update.message.from_user.username)))
+    path_content = os.path.join(PHOTOS_FOLDER, '{}_content_photo.jpg'.format(str(update.message.from_user.username)))
+    path_out = os.path.join(PHOTOS_FOLDER, '{}_out_photo.jpg'.format(str(update.message.from_user.username)))
+    photo_file.download(path_style)
+    logger.info("Photo of %s: %s", user.first_name, 'style_photo.jpg')
+    update.message.reply_text('Перенос стиля скоро будет⏳')
+    style_img = model.image_loader(path_style)
+    content_img = model.image_loader(path_content)
+    output = model.run_style_transfer(content_img, style_img, content_img)
+    imsave(output, path_out)
+    context.bot.send_photo(chat_id=update.effective_chat.id, photo=open(path_out, 'rb'))
+    update.message.reply_text('По-моему получилось неплохо👨‍🎨')
+    imdel(path_style)
+    imdel(path_content)
+    imdel(path_out)
+    update.message.reply_text('Хочешь еще?\nШли новое фото📷.\nВведи /cancel для завершения')
+    return CONTENT
 
+@run_async
+def cancel(update, context):
+    user = update.message.from_user
+    logger.info("User %s canceled the conversation.", user.first_name)
+    path_style = os.path.join(PHOTOS_FOLDER, '{}_style_photo.jpg'.format(str(update.message.from_user.username)))
+    path_content = os.path.join(PHOTOS_FOLDER, '{}_content_photo.jpg'.format(str(update.message.from_user.username)))
+    path_out = os.path.join(PHOTOS_FOLDER, '{}_out_photo.jpg'.format(str(update.message.from_user.username)))
+    imdel(path_style)
+    imdel(path_content)
+    imdel(path_out)
+    
+    update.message.reply_text('Если захочешь попробовать еще, просто введи /start')
+    
+
+    return ConversationHandler.END
+
+
+@run_async
+def error(update, context):
+    """Log Errors caused by Updates."""
+    logger.warning('Update "%s" caused error "%s"', update, context.error)
 
 if __name__ == '__main__':
-    from telegram.ext import Updater, MessageHandler, Filters
+    
+    from telegram.ext import Updater, MessageHandler, Filters, ConversationHandler, CommandHandler
     import logging
-
+    if not os.path.exists(PHOTOS_FOLDER):
+        os.makedirs(PHOTOS_FOLDER)
     # Включим самый базовый логгинг, чтобы видеть сообщения об ошибках
     logging.basicConfig(
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         level=logging.INFO)
-    # используем прокси, так как без него у меня ничего не работало.
-    # если есть проблемы с подключением, то попробуйте убрать прокси или сменить на другой
-    # прокси ищется в гугле как "socks4 proxy"
-    updater = Updater(token=token,  request_kwargs={'proxy_url': 'socks4://168.195.171.42:44880'})
 
-    # В реализации сложных диалогов скорее всего будет удобнее использовать Conversation Handler
-    # вместо назначения handler'ов таким способом
-    updater.dispatcher.add_handler(MessageHandler(Filters.photo, send_prediction_on_photo))
+    
+
+    logger = logging.getLogger(__name__)
+    updater = Updater(token=token,  request_kwargs={'proxy_url': 'socks5h://163.172.152.192:1080'}, use_context=True)
+    dp = updater.dispatcher
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
+
+        states={
+            CONTENT: [MessageHandler(Filters.photo, photo_content)],
+
+            STYLE: [MessageHandler(Filters.photo,photo_style)]
+        },
+
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
+
+    dp.add_handler(conv_handler)
+
+    # log all errors
+    dp.add_error_handler(error)
+
     updater.start_polling()
+
