@@ -2,6 +2,7 @@ from model import StyleTransferModel
 import torchvision.transforms as transforms
 from io import BytesIO
 from telegram_token import token
+import os 
 
 # В бейзлайне пример того, как мы можем обрабатывать две картинки, пришедшие от пользователя.
 unloader = transforms.ToPILImage()
@@ -9,15 +10,17 @@ model = StyleTransferModel()
 first_image_file = {}
 
 CONTENT, STYLE = range(2)
-
+PHOTOS_FOLDER = './photos/'
 
 def imsave(tensor, title="out.jpg"):
     image = tensor.cpu().clone()
     image = image.squeeze(0)      # функция для отрисовки изображения
     image = unloader(image)
-    image.save(title+".jpg", "JPEG", quality=80, optimize=True, progressive=True)
+    image.save(title, "JPEG", quality=80, optimize=True, progressive=True)
  
-
+def imdel(title):
+    if os.path.exists(title):
+        os.remove(title)
 
 def start(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text="Пришли фото которое хочешь обработать")
@@ -28,7 +31,8 @@ def start(update, context):
 def photo_content(update, context):
     user = update.message.from_user
     photo_file = update.message.photo[-1].get_file()
-    photo_file.download('content_photo.jpg')
+    path_content = os.path.join(PHOTOS_FOLDER, '{}_content_photo.jpg'.format(str(update.message.from_user.username)))
+    photo_file.download(path_content)
     logger.info("Photo of %s: %s", user.first_name, 'content_photo.jpg')
     update.message.reply_text('теперь фото стиля')
 
@@ -37,31 +41,50 @@ def photo_content(update, context):
 def photo_style(update, context):
     user = update.message.from_user
     photo_file = update.message.photo[-1].get_file()
-    photo_file.download('style_photo.jpg')
+    path_style = os.path.join(PHOTOS_FOLDER, '{}_style_photo.jpg'.format(str(update.message.from_user.username)))
+    path_content = os.path.join(PHOTOS_FOLDER, '{}_content_photo.jpg'.format(str(update.message.from_user.username)))
+    path_out = os.path.join(PHOTOS_FOLDER, '{}_out_photo.jpg'.format(str(update.message.from_user.username)))
+    photo_file.download(path_style)
     logger.info("Photo of %s: %s", user.first_name, 'style_photo.jpg')
     update.message.reply_text('перенос стиля скоро будет')
-    style_img = model.image_loader("style_photo.jpg")# as well as here
-    content_img = model.image_loader('content_photo.jpg')#измените путь на тот который у вас.
+    style_img = model.image_loader(path_style)# as well as here
+    content_img = model.image_loader(path_content)#измените путь на тот который у вас.
     output = model.run_style_transfer(content_img, style_img, content_img)
-    imsave(output, "out")
+    imsave(output, path_out)
     context.bot.send_photo(chat_id=update.effective_chat.id, photo=open('out.jpg', 'rb'))
+    imdel(path_style)
+    imdel(path_content)
+    imdel(path_out)
     return CONTENT
 
 
 def cancel(update, context):
     user = update.message.from_user
     logger.info("User %s canceled the conversation.", user.first_name)
+    path_style = os.path.join(PHOTOS_FOLDER, '{}_style_photo.jpg'.format(str(update.message.from_user.username)))
+    path_content = os.path.join(PHOTOS_FOLDER, '{}_content_photo.jpg'.format(str(update.message.from_user.username)))
+    path_out = os.path.join(PHOTOS_FOLDER, '{}_out_photo.jpg'.format(str(update.message.from_user.username)))
+    imdel(path_style)
+    imdel(path_content)
+    imdel(path_out)
+    
     update.message.reply_text('Bye! I hope we can talk again some day.')
+    
 
     return ConversationHandler.END
+
+
+
 def error(update, context):
     """Log Errors caused by Updates."""
     logger.warning('Update "%s" caused error "%s"', update, context.error)
 
 if __name__ == '__main__':
+    
     from telegram.ext import Updater, MessageHandler, Filters, ConversationHandler, CommandHandler
     import logging
-
+    if not os.path.exists(PHOTOS_FOLDER):
+        os.makedirs(PHOTOS_FOLDER)
     # Включим самый базовый логгинг, чтобы видеть сообщения об ошибках
     logging.basicConfig(
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
