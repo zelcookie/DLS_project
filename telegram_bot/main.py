@@ -4,6 +4,7 @@ from io import BytesIO
 from telegram_token import token
 import os 
 
+from telegram.ext.dispatcher import run_async
 # В бейзлайне пример того, как мы можем обрабатывать две картинки, пришедшие от пользователя.
 unloader = transforms.ToPILImage()
 model = StyleTransferModel()
@@ -22,12 +23,13 @@ def imdel(title):
     if os.path.exists(title):
         os.remove(title)
 
+@run_async
 def start(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text="Пришли фото которое хочешь обработать")
     return CONTENT
 
 
-
+@run_async
 def photo_content(update, context):
     user = update.message.from_user
     photo_file = update.message.photo[-1].get_file()
@@ -38,6 +40,7 @@ def photo_content(update, context):
 
     return STYLE
 
+@run_async
 def photo_style(update, context):
     user = update.message.from_user
     photo_file = update.message.photo[-1].get_file()
@@ -51,13 +54,13 @@ def photo_style(update, context):
     content_img = model.image_loader(path_content)#измените путь на тот который у вас.
     output = model.run_style_transfer(content_img, style_img, content_img)
     imsave(output, path_out)
-    context.bot.send_photo(chat_id=update.effective_chat.id, photo=open('out.jpg', 'rb'))
+    context.bot.send_photo(chat_id=update.effective_chat.id, photo=open(path_out, 'rb'))
     imdel(path_style)
     imdel(path_content)
     imdel(path_out)
     return CONTENT
 
-
+@run_async
 def cancel(update, context):
     user = update.message.from_user
     logger.info("User %s canceled the conversation.", user.first_name)
@@ -74,7 +77,7 @@ def cancel(update, context):
     return ConversationHandler.END
 
 
-
+@run_async
 def error(update, context):
     """Log Errors caused by Updates."""
     logger.warning('Update "%s" caused error "%s"', update, context.error)
